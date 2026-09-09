@@ -157,6 +157,17 @@ function AM.DumpDiscoveredCommands()
     end
 end
 
+-- One-time baseline: whichever addon's ADDON_LOADED fires first (alphabetically,
+-- that's usually us) would otherwise have EVERY pre-existing SLASH_* global -
+-- Blizzard's own built-ins (/gmotd etc.) and libraries loaded earlier (AceConsole's
+-- /print etc.) - all show up as "new" in the same pairs(_G) pass and get credited
+-- to it, since pairs() has no defined order and could easily fill both of that
+-- addon's 2 slots before its own real command is even seen. Marking everything
+-- that already exists as "seen" up front, with no owner, fixes that: only commands
+-- that appear AFTER this point (i.e. registered by an addon's own file) get
+-- attributed to anyone.
+AM.ScanNewSlashCommands(nil)
+
 -- ---------------------------------------------------------------------------------------------
 -- Helpers
 -- ---------------------------------------------------------------------------------------------
@@ -201,6 +212,7 @@ AM.addons = {}
 AM.filtered = {}
 AM.page = 0
 AM.filterText = ""
+AM.settingsPage = 0
 
 -- GetAddOnInfo's exact field order for slots 4+ isn't reliably known across client
 -- builds (that guess was wrong here, which is why the list showed everything as
@@ -422,9 +434,16 @@ function AM.CreateMainFrame()
     prevBtn:SetPoint("RIGHT", pageLabel, "LEFT", -10, 0)
     prevBtn:SetText("< Prev")
     prevBtn:SetScript("OnClick", function()
-        if AM.page > 0 then
-            AM.page = AM.page - 1
-            AM.RefreshWindow()
+        if AM.activeTab == "settings" then
+            if AM.settingsPage > 0 then
+                AM.settingsPage = AM.settingsPage - 1
+                AM.RefreshSettingsPanel()
+            end
+        else
+            if AM.page > 0 then
+                AM.page = AM.page - 1
+                AM.RefreshWindow()
+            end
         end
     end)
 
@@ -433,11 +452,21 @@ function AM.CreateMainFrame()
     nextBtn:SetPoint("LEFT", pageLabel, "RIGHT", 10, 0)
     nextBtn:SetText("Next >")
     nextBtn:SetScript("OnClick", function()
-        local maxPage = math.floor((table.getn(AM.filtered) - 1) / AM.PAGE_SIZE)
-        if maxPage < 0 then maxPage = 0 end
-        if AM.page < maxPage then
-            AM.page = AM.page + 1
-            AM.RefreshWindow()
+        if AM.activeTab == "settings" then
+            local totalItems = table.getn(AM.collectedList) + table.getn(AM.releasedList)
+            local maxPage = math.floor((totalItems - 1) / table.getn(AM.mainFrame.settingsRows))
+            if maxPage < 0 then maxPage = 0 end
+            if AM.settingsPage < maxPage then
+                AM.settingsPage = AM.settingsPage + 1
+                AM.RefreshSettingsPanel()
+            end
+        else
+            local maxPage = math.floor((table.getn(AM.filtered) - 1) / AM.PAGE_SIZE)
+            if maxPage < 0 then maxPage = 0 end
+            if AM.page < maxPage then
+                AM.page = AM.page + 1
+                AM.RefreshWindow()
+            end
         end
     end)
     f.prevBtn = prevBtn
@@ -564,12 +593,13 @@ function AM.SetTab(tab)
     if not f then return end
 
     local isAddons = (tab == "enabled" or tab == "disabled")
+    local isSettings = (tab == "settings")
 
     f.filterLabel:SetShown(isAddons)
     f.filterBox:SetShown(isAddons)
-    f.pageLabel:SetShown(isAddons)
-    f.prevBtn:SetShown(isAddons)
-    f.nextBtn:SetShown(isAddons)
+    f.pageLabel:SetShown(isAddons or isSettings)
+    f.prevBtn:SetShown(isAddons or isSettings)
+    f.nextBtn:SetShown(isAddons or isSettings)
     if isAddons then
         AM.page = 0
         AM.ApplyFilter()
@@ -585,11 +615,12 @@ function AM.SetTab(tab)
     f.copyHint:SetShown(isErrors)
     f.errorScroll:SetShown(isErrors)
 
-    local isSettings = (tab == "settings")
     f.rescanBtn:SetShown(isSettings)
     f.settingsCountLabel:SetShown(isSettings)
     f.settingsHint:SetShown(isSettings)
-    if not isSettings then
+    if isSettings then
+        AM.settingsPage = 0
+    else
         for i = 1, table.getn(f.settingsRows) do
             f.settingsRows[i]:Hide()
         end
@@ -654,9 +685,18 @@ function AM.RefreshSettingsPanel()
 
     f.settingsCountLabel:SetText(table.getn(AM.collectedList) .. " stored, " .. table.getn(AM.releasedList) .. " released")
 
-    for i = 1, table.getn(f.settingsRows) do
+    local rowMax = table.getn(f.settingsRows)
+    local total = table.getn(combined)
+    local maxPage = math.floor((total - 1) / rowMax)
+    if maxPage < 0 then maxPage = 0 end
+    if AM.settingsPage > maxPage then AM.settingsPage = maxPage end
+    f.pageLabel:SetText("Page " .. (AM.settingsPage + 1) .. " / " .. (maxPage + 1) .. "  (" .. total .. " icons)")
+
+    local startIndex = AM.settingsPage * rowMax
+
+    for i = 1, rowMax do
         local srow = f.settingsRows[i]
-        local entry = combined[i]
+        local entry = combined[startIndex + i]
         if entry and entry.frame:GetName() then
             local name = entry.frame:GetName()
             srow.frameRef = entry.frame
@@ -856,6 +896,28 @@ AM.released = {}      -- [frame] = true, so a manually-released icon stays off t
                        -- frame references can't be saved across reloads)
 AM.releasedList = {}  -- ordered list, for the Settings tab
 
+-- Same idea as AM.GetButtonIconTexture, but just checking presence - used to
+-- require "actually looks like an icon" before collecting something.
+function AM.HasVisibleTexture(frame)
+    if frame.GetNormalTexture then
+        local ok, nt = pcall(frame.GetNormalTexture, frame)
+        if ok and nt and nt.GetTexture and nt:GetTexture() then return true end
+    end
+    local ok, regions = pcall(function() return { frame:GetRegions() } end)
+    if ok then
+        for _, r in ipairs(regions) do
+            if r.GetObjectType and r:GetObjectType() == "Texture" and r.GetTexture and r:GetTexture() then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Real minimap tracking icons are small, roughly square, visible, and have an
+-- actual icon texture on them. The original version of this check (any Button
+-- 10-60px wide) was too loose and swept up unrelated buttons that just happened
+-- to be parented to Minimap for positioning convenience, not shown as icons.
 function AM.IsCollectibleMinimapChild(child)
     if not child or not child.GetObjectType then return false end
     if child:GetObjectType() ~= "Button" then return false end
@@ -864,8 +926,15 @@ function AM.IsCollectibleMinimapChild(child)
     if AM.MINIMAP_EXCLUDE[name] then return false end
     if AM.collected[child] then return false end
     if AM.released[child] then return false end
-    local w = child:GetWidth()
-    if not w or w < 10 or w > 60 then return false end
+    if not child:IsVisible() then return false end
+
+    local w, h = child:GetWidth(), child:GetHeight()
+    if not w or not h or w < 18 or w > 40 or h < 18 or h > 40 then return false end
+    local ratio = w / h
+    if ratio < 0.7 or ratio > 1.4 then return false end
+
+    if not AM.HasVisibleTexture(child) then return false end
+
     return true
 end
 
