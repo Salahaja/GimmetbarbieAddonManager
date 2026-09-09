@@ -924,6 +924,12 @@ function AM.IsCollectibleMinimapChild(child)
     local name = child.GetName and child:GetName()
     if not name then return false end
     if AM.MINIMAP_EXCLUDE[name] then return false end
+    -- pfQuest names its quest-marker pins "pfMiniMapPinN" (one per active
+    -- marker, numbered) - these are map data, not launcher icons, and pfQuest
+    -- already has its own logic to dodge known collector addons (it checks for
+    -- "MBB"/"ElvUI_MinimapButtons" by name and renames itself to avoid them),
+    -- but doesn't know about us. Prefix match since N varies.
+    if string.find(name, "^pfMiniMapPin") then return false end
     if AM.collected[child] then return false end
     if AM.released[child] then return false end
     if not child:IsVisible() then return false end
