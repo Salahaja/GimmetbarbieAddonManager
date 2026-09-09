@@ -39,9 +39,15 @@ An in-game addon manager for WoW 1.12 (vanilla) clients that don't ship one of t
 
 ## Installation
 
-1. Download or clone this repo.
-2. Copy the folder into `Interface\AddOns\` so you end up with `Interface\AddOns\AddonManager\AddonManager.toc`.
-3. `/reloadui` or restart the client.
+**Important:** the addon's folder must be named exactly `AddonManager` inside `Interface\AddOns\` — the client identifies an addon by its folder name, and the code checks for that name internally. The repo itself is named `GimmetbarbieAddonManager` (its display title), which is *not* the same thing.
+
+**Recommended:** download the zip from [Releases](../../releases) — it's already packaged with the correct internal folder name, so extracting it straight into `Interface\AddOns\` just works.
+
+**If cloning instead:**
+1. Clone or download this repo (its folder will be named `GimmetbarbieAddonManager`).
+2. Rename that folder to `AddonManager` before placing it in `Interface\AddOns\`.
+3. You should end up with `Interface\AddOns\AddonManager\AddonManager.toc`.
+4. `/reloadui` or restart the client.
 
 ## Known limitations
 
