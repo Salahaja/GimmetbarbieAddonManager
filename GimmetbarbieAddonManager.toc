@@ -1,5 +1,5 @@
 ## Interface: 11200
-## Version: 1.0.2
+## Version: 1.0.3
 ## Title: GB Addon Manager
 ## Notes: Enable/disable installed addons, quick-launch their known slash commands, and collect stray minimap buttons into one icon.
 ## Author: You
