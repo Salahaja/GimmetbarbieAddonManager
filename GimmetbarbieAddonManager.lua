@@ -1,7 +1,10 @@
 --[[
-    Addon:       AddonManager (folder/internal name - GetAddOnInfo, ADDON_LOADED,
-                 and SavedVariables all key off this, so it stays as-is even though
-                 the addon displays as "Gimmetbarbie Addon Manager" everywhere else)
+    Addon:       GimmetbarbieAddonManager (folder/internal name - GetAddOnInfo,
+                 ADDON_LOADED, and SavedVariables all key off this, matching the
+                 folder/.toc/.lua names and the GitHub repo; displays in-game as
+                 "Gimmetbarbie Addon Manager" in the window/chat, and "GB Addon
+                 Manager" in the .toc Title shown by the character-select screen
+                 and other addons' lists)
     Description: In-game addon list for WoW 1.12 clients that have no built-in one.
                  - Enable/disable any installed addon (takes effect after /reloadui,
                    same as the character-select AddOns screen - the client only reads
@@ -36,7 +39,7 @@
 -- ---------------------------------------------------------------------------------------------
 
 AM = {}
-AM.ADDON_NAME = "AddonManager"
+AM.ADDON_NAME = "GimmetbarbieAddonManager"
 AM.PAGE_SIZE  = 14
 AM.ROW_HEIGHT = 20
 AM.activeTab  = "enabled"
