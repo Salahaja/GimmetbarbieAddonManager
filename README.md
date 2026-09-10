@@ -1,4 +1,4 @@
-# Gimmetbarbie Addon Manager
+# Gimmetbarbie Addon Manager (v1.0.2)
 
 An in-game addon manager for WoW 1.12 (vanilla) clients that don't ship one of their own — enable/disable addons, quick-launch their slash commands, catch Lua errors from any addon, and tidy up your minimap.
 

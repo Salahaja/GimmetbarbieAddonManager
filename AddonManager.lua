@@ -585,6 +585,12 @@ function AM.CreateMainFrame()
     AM.SetTab("enabled")
 end
 
+-- Vanilla 1.12 has no :SetShown() - that's a later-expansion convenience method.
+-- Show()/Hide() are the real API.
+local function SetShown(frame, shown)
+    if shown then frame:Show() else frame:Hide() end
+end
+
 -- Switches which content is visible: enabled addons, disabled addons, the error
 -- log, or the minimap-icon settings.
 function AM.SetTab(tab)
@@ -595,11 +601,11 @@ function AM.SetTab(tab)
     local isAddons = (tab == "enabled" or tab == "disabled")
     local isSettings = (tab == "settings")
 
-    f.filterLabel:SetShown(isAddons)
-    f.filterBox:SetShown(isAddons)
-    f.pageLabel:SetShown(isAddons or isSettings)
-    f.prevBtn:SetShown(isAddons or isSettings)
-    f.nextBtn:SetShown(isAddons or isSettings)
+    SetShown(f.filterLabel, isAddons)
+    SetShown(f.filterBox, isAddons)
+    SetShown(f.pageLabel, isAddons or isSettings)
+    SetShown(f.prevBtn, isAddons or isSettings)
+    SetShown(f.nextBtn, isAddons or isSettings)
     if isAddons then
         AM.page = 0
         AM.ApplyFilter()
@@ -610,14 +616,14 @@ function AM.SetTab(tab)
     end
 
     local isErrors = (tab == "errors")
-    f.clearLogBtn:SetShown(isErrors)
-    f.errorCountLabel:SetShown(isErrors)
-    f.copyHint:SetShown(isErrors)
-    f.errorScroll:SetShown(isErrors)
+    SetShown(f.clearLogBtn, isErrors)
+    SetShown(f.errorCountLabel, isErrors)
+    SetShown(f.copyHint, isErrors)
+    SetShown(f.errorScroll, isErrors)
 
-    f.rescanBtn:SetShown(isSettings)
-    f.settingsCountLabel:SetShown(isSettings)
-    f.settingsHint:SetShown(isSettings)
+    SetShown(f.rescanBtn, isSettings)
+    SetShown(f.settingsCountLabel, isSettings)
+    SetShown(f.settingsHint, isSettings)
     if isSettings then
         AM.settingsPage = 0
     else
@@ -979,16 +985,34 @@ function AM.LayoutDrawer()
     AM.drawer:SetHeight(pad + rowsNeeded * (size + pad))
 end
 
+-- Tries to collect one candidate frame; returns true if it was collected.
+local function TryCollect(child)
+    if not AM.IsCollectibleMinimapChild(child) then return false end
+    AM.collected[child] = true
+    child:SetParent(AM.drawer)
+    child:SetFrameLevel(AM.drawer:GetFrameLevel() + 1)
+    table.insert(AM.collectedList, child)
+    return true
+end
+
 function AM.ScanMinimapButtons()
     local kids = { Minimap:GetChildren() }
     local found = false
     for _, child in ipairs(kids) do
-        if AM.IsCollectibleMinimapChild(child) then
-            AM.collected[child] = true
-            child:SetParent(AM.drawer)
-            child:SetFrameLevel(AM.drawer:GetFrameLevel() + 1)
-            table.insert(AM.collectedList, child)
+        if TryCollect(child) then
             found = true
+        elseif child.GetChildren then
+            -- Some addons (AtlasLoot confirmed) wrap their real button in an
+            -- intermediate positioning Frame that's the direct child of
+            -- Minimap, with the actual clickable Button nested one level
+            -- inside that wrapper - a direct-children-only scan never finds
+            -- it. Check one level deeper for exactly that shape.
+            local ok, grandkids = pcall(function() return { child:GetChildren() } end)
+            if ok then
+                for _, grandchild in ipairs(grandkids) do
+                    if TryCollect(grandchild) then found = true end
+                end
+            end
         end
     end
     if found then AM.LayoutDrawer() end
