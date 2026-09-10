@@ -4,4 +4,4 @@
 ## Notes: Enable/disable installed addons, quick-launch their known slash commands, and collect stray minimap buttons into one icon.
 ## Author: You
 ## SavedVariables: AM_MinimapPos, AM_FramePos, AM_ErrorLog
-AddonManager.lua
+GimmetbarbieAddonManager.lua
