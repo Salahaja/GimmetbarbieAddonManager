@@ -1,4 +1,4 @@
-# Gimmetbarbie Addon Manager (v1.0.2)
+# Gimmetbarbie Addon Manager (v1.0.3)
 
 An in-game addon manager for WoW 1.12 (vanilla) clients that don't ship one of their own — enable/disable addons, quick-launch their slash commands, catch Lua errors from any addon, and tidy up your minimap.
 
@@ -39,15 +39,14 @@ An in-game addon manager for WoW 1.12 (vanilla) clients that don't ship one of t
 
 ## Installation
 
-**Important:** the addon's folder must be named exactly `AddonManager` inside `Interface\AddOns\` — the client identifies an addon by its folder name, and the code checks for that name internally. The repo itself is named `GimmetbarbieAddonManager` (its display title), which is *not* the same thing.
+The client identifies an addon by its folder name, which must contain a matching `.toc` file — this repo's name, folder, `.toc`, and `.lua` are all `GimmetbarbieAddonManager`, so no renaming is needed at any step.
 
-**Recommended:** download the zip from [Releases](../../releases) — it's already packaged with the correct internal folder name, so extracting it straight into `Interface\AddOns\` just works.
+**Recommended:** download the zip from [Releases](../../releases) and extract it straight into `Interface\AddOns\`.
 
 **If cloning instead:**
-1. Clone or download this repo (its folder will be named `GimmetbarbieAddonManager`).
-2. Rename that folder to `AddonManager` before placing it in `Interface\AddOns\`.
-3. You should end up with `Interface\AddOns\AddonManager\AddonManager.toc`.
-4. `/reloadui` or restart the client.
+1. Clone this repo into `Interface\AddOns\` (or clone anywhere and copy the folder in).
+2. You should end up with `Interface\AddOns\GimmetbarbieAddonManager\GimmetbarbieAddonManager.toc`.
+3. `/reloadui` or restart the client.
 
 ## Known limitations
 
