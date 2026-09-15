@@ -24,6 +24,11 @@
         /am              toggle the addon list window
         /am reload       reloads the UI (applies pending enable/disable changes)
         /am rescan       force a minimap-button collection pass
+
+    Released buttons persist. Whether you release one from the settings menu or
+    by dragging it out of the drawer, the decision is remembered by frame NAME
+    in AM_ReleasedButtons and honoured on the next login - a frame reference is
+    meaningless in the next session, a name is not.
         /am probe        dumps GetAddOnInfo(1)'s raw return values to chat, for
                           verifying this client's exact field order (see NOTE below)
         /am commands     lists how many slash commands were auto-discovered per addon
@@ -727,10 +732,114 @@ function AM.RefreshSettingsPanel()
     end
 end
 
--- Puts a collected button back on the minimap and stops re-collecting it this
--- session (original position isn't recorded, so it lands near the minimap center -
--- drag it wherever if the addon it belongs to doesn't reposition it itself).
-function AM.ReleaseMinimapButton(btn)
+-- Is this frame object already tracked as released this session?
+function AM.IsReleasedFrame(btn)
+    for _, v in ipairs(AM.releasedList) do
+        if v == btn then return true end
+    end
+    return false
+end
+
+-- ---------------------------------------------------------------------------------------------
+-- Dragging an icon out of the drawer to release it
+-- ---------------------------------------------------------------------------------------------
+--
+-- Movement is done by hand from cursor deltas rather than with
+-- StartMoving()/StopMovingOrSizing(). That is not a style preference: those
+-- calls make the CLIENT mark the frame "user placed", after which it writes that
+-- frame's position into layout-cache.txt and restores it on every future login -
+-- permanently, outside this addon's control, surviving even uninstalling it.
+-- These are other addons' named buttons, so we have no business leaving that
+-- mark on them.
+--
+-- For the same reason the button's own drag scripts are REPLACED while it sits
+-- in the drawer, not wrapped: most minimap buttons implement dragging with
+-- StartMoving, so calling through to them would set the flag anyway. Their
+-- "drag me around the minimap" behaviour is meaningless while they're in a
+-- drawer, and the originals are put back the moment the button is released.
+AM.dragDriver = CreateFrame("Frame")
+AM.dragDriver:Hide()
+AM.dragDriver:SetScript("OnUpdate", function()
+    local btn = AM.draggingButton
+    if not btn then this:Hide() return end
+    local scale = btn:GetEffectiveScale()
+    local cx, cy = GetCursorPosition()
+    btn:ClearAllPoints()
+    btn:SetPoint("CENTER", UIParent, "BOTTOMLEFT",
+        cx / scale + AM.dragOffsetX, cy / scale + AM.dragOffsetY)
+end)
+
+-- Is the cursor inside the drawer's rectangle right now? Dropping inside means
+-- "keep it, I was just rearranging"; dropping outside means "get this out of
+-- here", which is the whole gesture.
+function AM.CursorOverDrawer()
+    local d = AM.drawer
+    if not d or not d:IsShown() then return false end
+    local left, right = d:GetLeft(), d:GetRight()
+    local top, bottom = d:GetTop(), d:GetBottom()
+    if not left or not right or not top or not bottom then return false end
+
+    local scale = d:GetEffectiveScale()
+    local cx, cy = GetCursorPosition()
+    cx, cy = cx / scale, cy / scale
+    return cx >= left and cx <= right and cy >= bottom and cy <= top
+end
+
+function AM.BeginButtonDrag(btn)
+    local scale = btn:GetEffectiveScale()
+    local cx, cy = GetCursorPosition()
+    local bx, by = btn:GetCenter()
+    if not bx then return end
+    -- Keep the grab point under the cursor instead of snapping the icon's
+    -- centre to it.
+    AM.dragOffsetX = bx - cx / scale
+    AM.dragOffsetY = by - cy / scale
+    AM.draggingButton = btn
+    AM.dragDriver:Show()
+end
+
+function AM.EndButtonDrag(btn)
+    AM.dragDriver:Hide()
+    AM.draggingButton = nil
+
+    if AM.CursorOverDrawer() then
+        -- Dropped back inside: it belongs to the grid, so put it back in line.
+        AM.LayoutDrawer()
+    else
+        AM.ReleaseMinimapButton(btn, true)
+        local name = (btn.GetName and btn:GetName()) or "that button"
+        AM.Say(name .. " released - it will stay out of the drawer after reloads. " ..
+            "Recollect it from " .. "|cFFFFFFFF/am|r > Settings.")
+    end
+end
+
+function AM.SetupButtonDrag(btn)
+    if btn.amDragHooked then return end
+    btn.amDragHooked = true
+    btn.amOrigDragStart = btn:GetScript("OnDragStart")
+    btn.amOrigDragStop = btn:GetScript("OnDragStop")
+    pcall(btn.RegisterForDrag, btn, "LeftButton")
+    btn:SetScript("OnDragStart", function() AM.BeginButtonDrag(this) end)
+    btn:SetScript("OnDragStop", function() AM.EndButtonDrag(this) end)
+end
+
+function AM.RestoreButtonDrag(btn)
+    if not btn.amDragHooked then return end
+    btn.amDragHooked = nil
+    btn:SetScript("OnDragStart", btn.amOrigDragStart)
+    btn:SetScript("OnDragStop", btn.amOrigDragStop)
+    btn.amOrigDragStart, btn.amOrigDragStop = nil, nil
+end
+
+-- Puts a collected button back on the minimap and stops re-collecting it, now
+-- permanently: the name goes into AM.releasedNames, which is saved.
+--
+-- keepPosition is set when the release came from dragging the icon out of the
+-- drawer - it is already sitting where the player dropped it, and yanking it to
+-- the minimap centre would undo the gesture they just made. A release from the
+-- settings menu has no such position to honour, so it lands near the minimap
+-- and the owning addon usually repositions it from there anyway.
+function AM.ReleaseMinimapButton(btn, keepPosition)
     for i, v in ipairs(AM.collectedList) do
         if v == btn then
             table.remove(AM.collectedList, i)
@@ -739,11 +848,20 @@ function AM.ReleaseMinimapButton(btn)
     end
     AM.collected[btn] = nil
     AM.released[btn] = true
-    table.insert(AM.releasedList, btn)
+    if not AM.IsReleasedFrame(btn) then table.insert(AM.releasedList, btn) end
 
+    local name = btn.GetName and btn:GetName()
+    if name then
+        AM.releasedNames[name] = true
+        AM.SaveReleasedButtons()
+    end
+
+    AM.RestoreButtonDrag(btn)
     btn:SetParent(Minimap)
-    btn:ClearAllPoints()
-    btn:SetPoint("CENTER", Minimap, "CENTER", 0, 0)
+    if not keepPosition then
+        btn:ClearAllPoints()
+        btn:SetPoint("CENTER", Minimap, "CENTER", 0, 0)
+    end
     btn:Show()
 
     AM.LayoutDrawer()
@@ -762,8 +880,15 @@ function AM.RecollectMinimapButton(btn)
     AM.collected[btn] = true
     table.insert(AM.collectedList, btn)
 
+    local name = btn.GetName and btn:GetName()
+    if name then
+        AM.releasedNames[name] = nil
+        AM.SaveReleasedButtons()
+    end
+
     btn:SetParent(AM.drawer)
     btn:SetFrameLevel(AM.drawer:GetFrameLevel() + 1)
+    AM.SetupButtonDrag(btn)
 
     AM.LayoutDrawer()
     AM.RefreshSettingsPanel()
@@ -900,10 +1025,22 @@ AM.MINIMAP_EXCLUDE = {
 
 AM.collected = {}     -- [frame] = true, so we don't re-collect the same one
 AM.collectedList = {} -- ordered list for layout
-AM.released = {}      -- [frame] = true, so a manually-released icon stays off the
-                       -- minimap-drawer until explicitly recollected (session-only -
-                       -- frame references can't be saved across reloads)
+AM.released = {}      -- [frame] = true for THIS session's frame objects
 AM.releasedList = {}  -- ordered list, for the Settings tab
+
+-- [frameName] = true. This is the part that survives a reload, and it is keyed
+-- by NAME rather than by frame because a frame reference is meaningless in the
+-- next session. Every collectible button is already required to have a name
+-- (see IsCollectibleMinimapChild), so there is always a key to use.
+--
+-- Only releases are recorded. Collecting is the default for anything eligible,
+-- so "collected" needs no entry - a button is in the drawer precisely when it
+-- has not been released.
+AM.releasedNames = {}
+
+function AM.SaveReleasedButtons()
+    AM_ReleasedButtons = AM.releasedNames
+end
 
 -- Same idea as AM.GetButtonIconTexture, but just checking presence - used to
 -- require "actually looks like an icon" before collecting something.
@@ -991,9 +1128,25 @@ end
 -- Tries to collect one candidate frame; returns true if it was collected.
 local function TryCollect(child)
     if not AM.IsCollectibleMinimapChild(child) then return false end
+
+    local name = child.GetName and child:GetName()
+    if name and AM.releasedNames[name] then
+        -- Released in an earlier session. Leave it on the minimap, but register
+        -- the frame so the Settings tab can still list it and offer Recollect.
+        -- Without this the button would simply vanish from the addon after a
+        -- reload, with no way to get it back short of editing saved variables.
+        if not AM.released[child] then
+            AM.released[child] = true
+            table.insert(AM.releasedList, child)
+            AM.RefreshSettingsPanel()
+        end
+        return false
+    end
+
     AM.collected[child] = true
     child:SetParent(AM.drawer)
     child:SetFrameLevel(AM.drawer:GetFrameLevel() + 1)
+    AM.SetupButtonDrag(child)
     table.insert(AM.collectedList, child)
     return true
 end
@@ -1141,6 +1294,11 @@ ev:SetScript("OnEvent", function()
             while table.getn(AM.errorLog) > AM.ERROR_LOG_MAX do
                 table.remove(AM.errorLog, 1)
             end
+            -- Which buttons the player has released, from previous sessions. Loaded
+            -- before the first minimap scan so a released button is never briefly
+            -- yanked into the drawer and then spat back out.
+            AM.releasedNames = AM_ReleasedButtons or {}
+
             AM.CreateDrawer()
             AM.CreateMinimapButton()
             AM.Say("/am opens list, right-click icon too")
