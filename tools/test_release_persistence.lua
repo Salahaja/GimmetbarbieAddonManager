@@ -220,6 +220,33 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+print("a recollected button can be dragged straight back out again")
+do
+    -- The full round trip: released in a past session, recollected from the
+    -- settings menu, then dragged out again. The drag hooks have to be
+    -- reinstalled by the recollect, or the second drag would do nothing and the
+    -- icon would be stuck in the drawer.
+    boot({ BetaButton = true }, { "AlphaButton", "BetaButton" })
+    check("starts out released", collectedNames(), "AlphaButton")
+
+    AM.RecollectMinimapButton(BetaButton)
+    check("recollected into the drawer", collectedNames(), "AlphaButton,BetaButton")
+    check("  and no longer saved as released", AM_ReleasedButtons["BetaButton"], nil)
+
+    local inX, inY = AM.drawer:GetLeft() + 5, AM.drawer:GetTop() - 5
+    Stub.cursor.x, Stub.cursor.y = inX, inY
+    Stub.FireScript(BetaButton, "OnDragStart")
+    Stub.cursor.x, Stub.cursor.y = 1500, 200
+    Stub.FireScript(BetaButton, "OnDragStop")
+
+    check("dragging it out again releases it", collectedNames(), "AlphaButton")
+    check("  and records it again", AM_ReleasedButtons["BetaButton"], true)
+
+    boot(AM_ReleasedButtons, { "AlphaButton", "BetaButton" })
+    check("  which survives the next reload", collectedNames(), "AlphaButton")
+end
+
+-- ---------------------------------------------------------------------------
 print("")
 if failures == 0 then
     print("all " .. checks .. " checks passed")
