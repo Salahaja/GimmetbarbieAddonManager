@@ -24,6 +24,8 @@
         /am              toggle the addon list window
         /am reload       reloads the UI (applies pending enable/disable changes)
         /am rescan       force a minimap-button collection pass
+        /am autoclose N  close the drawer after N seconds without the cursor
+                         on it (default 5; "off" to keep it open)
 
     Released buttons persist. Whether you release one from the settings menu or
     by dragging it out of the drawer, the decision is remembered by frame NAME
@@ -769,20 +771,24 @@ AM.dragDriver:SetScript("OnUpdate", function()
         cx / scale + AM.dragOffsetX, cy / scale + AM.dragOffsetY)
 end)
 
--- Is the cursor inside the drawer's rectangle right now? Dropping inside means
--- "keep it, I was just rearranging"; dropping outside means "get this out of
--- here", which is the whole gesture.
-function AM.CursorOverDrawer()
-    local d = AM.drawer
-    if not d or not d:IsShown() then return false end
-    local left, right = d:GetLeft(), d:GetRight()
-    local top, bottom = d:GetTop(), d:GetBottom()
+-- Is the cursor inside this frame right now? Used both for deciding where a
+-- dragged icon was dropped and for the drawer auto-close.
+function AM.CursorOverFrame(f)
+    if not f or not f:IsShown() then return false end
+    local left, right = f:GetLeft(), f:GetRight()
+    local top, bottom = f:GetTop(), f:GetBottom()
     if not left or not right or not top or not bottom then return false end
 
-    local scale = d:GetEffectiveScale()
+    local scale = f:GetEffectiveScale()
     local cx, cy = GetCursorPosition()
     cx, cy = cx / scale, cy / scale
     return cx >= left and cx <= right and cy >= bottom and cy <= top
+end
+
+-- Dropping inside means "keep it, I was just rearranging"; dropping outside
+-- means "get this out of here", which is the whole gesture.
+function AM.CursorOverDrawer()
+    return AM.CursorOverFrame(AM.drawer)
 end
 
 function AM.BeginButtonDrag(btn)
@@ -1195,6 +1201,57 @@ function AM.CreateDrawer()
     AM.drawer = d
 end
 
+-- ---------------------------------------------------------------------------------------------
+-- Drawer auto-close
+-- ---------------------------------------------------------------------------------------------
+-- The drawer closes itself once the cursor has been away from it for a few
+-- seconds, so it stops being a panel you have to remember to dismiss.
+--
+-- "Away from it" means away from the drawer's rectangle, which already covers
+-- the icons inside it - they're laid out within those bounds, so hovering one
+-- keeps the drawer alive without needing to test each button separately. The
+-- minimap button counts too, otherwise moving the cursor from the icon to the
+-- drawer could start the countdown during the gap between them.
+AM.DRAWER_AUTOCLOSE_DEFAULT = 5
+AM.drawerIdle = 0
+
+function AM.DrawerAutoCloseSeconds()
+    local v = AM_DrawerAutoClose
+    if v == nil then return AM.DRAWER_AUTOCLOSE_DEFAULT end
+    return v
+end
+
+function AM.ResetDrawerIdle()
+    AM.drawerIdle = 0
+end
+
+function AM.UpdateDrawerAutoClose(elapsed)
+    local d = AM.drawer
+    if not d or not d:IsShown() then return end
+
+    local seconds = AM.DrawerAutoCloseSeconds()
+    if not seconds or seconds <= 0 then return end -- turned off
+
+    -- Never time out mid-drag. Pulling an icon out necessarily takes the cursor
+    -- off the drawer, and closing underneath that gesture would cancel the very
+    -- thing the player is doing.
+    if AM.draggingButton then
+        AM.drawerIdle = 0
+        return
+    end
+
+    if AM.CursorOverFrame(d) or AM.CursorOverFrame(AM.minimapButton) then
+        AM.drawerIdle = 0
+        return
+    end
+
+    AM.drawerIdle = AM.drawerIdle + elapsed
+    if AM.drawerIdle >= seconds then
+        AM.drawerIdle = 0
+        d:Hide()
+    end
+end
+
 function AM.ToggleDrawer()
     if AM.drawer:IsShown() then
         AM.drawer:Hide()
@@ -1202,6 +1259,9 @@ function AM.ToggleDrawer()
         AM.drawer:ClearAllPoints()
         AM.drawer:SetPoint("TOPRIGHT", AM.minimapButton, "BOTTOMLEFT", 0, -4)
         AM.drawer:Show()
+        -- Full countdown from the moment it opens, rather than inheriting
+        -- whatever the timer happened to be at when it last closed.
+        AM.ResetDrawerIdle()
     end
 end
 
@@ -1329,6 +1389,8 @@ ev:SetScript("OnUpdate", function()
         return
     end
 
+    AM.UpdateDrawerAutoClose(arg1)
+
     -- keep periodically sweeping for late-created buttons (cheap, harmless if empty)
     ev.rescanTimer = ev.rescanTimer + arg1
     if ev.rescanTimer >= 5 then
@@ -1348,6 +1410,23 @@ SlashCmdList["ADDONMANAGER"] = function(msg)
     elseif msg == "rescan" then
         AM.ScanMinimapButtons()
         AM.Say("rescanned minimap buttons.")
+    elseif string.find(msg, "^autoclose") then
+        local _, _, arg = string.find(msg, "^autoclose%s+(%S+)")
+        if arg == "off" or arg == "0" then
+            AM_DrawerAutoClose = 0
+            AM.Say("drawer auto-close off - it stays open until you close it.")
+        elseif arg and tonumber(arg) then
+            AM_DrawerAutoClose = tonumber(arg)
+            AM.Say("drawer closes after " .. tonumber(arg) .. "s without the cursor on it.")
+        else
+            local s = AM.DrawerAutoCloseSeconds()
+            if not s or s <= 0 then
+                AM.Say("drawer auto-close is off. |cFFFFFFFF/am autoclose 5|r to turn it on.")
+            else
+                AM.Say("drawer closes after " .. s .. "s without the cursor on it. " ..
+                    "|cFFFFFFFF/am autoclose off|r to disable.")
+            end
+        end
     elseif msg == "probe" then
         AM.Probe()
     elseif msg == "commands" then

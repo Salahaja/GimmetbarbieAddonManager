@@ -1,7 +1,7 @@
 ## Interface: 11200
-## Version: 1.1.0
+## Version: 1.2.0
 ## Title: GB Addon Manager
 ## Notes: Enable/disable installed addons, quick-launch their known slash commands, and collect stray minimap buttons into one icon.
 ## Author: You
-## SavedVariables: AM_MinimapPos, AM_FramePos, AM_ErrorLog, AM_ReleasedButtons
+## SavedVariables: AM_MinimapPos, AM_FramePos, AM_ErrorLog, AM_ReleasedButtons, AM_DrawerAutoClose
 GimmetbarbieAddonManager.lua

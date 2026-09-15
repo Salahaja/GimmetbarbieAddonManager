@@ -247,6 +247,83 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+print("the drawer closes itself after the cursor has been away a while")
+do
+    boot(nil, { "AlphaButton", "BetaButton" })
+    AM.minimapButton = Stub.CreateFrame("Button", "AM_MinimapButtonTest")
+    AM.minimapButton._w, AM.minimapButton._h = 31, 31
+    AM.minimapButton:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 1500, 900)
+    AM.ResetDrawerIdle()
+
+    -- Cursor parked well away from both the drawer and the minimap button.
+    Stub.cursor.x, Stub.cursor.y = 50, 50
+    AM.UpdateDrawerAutoClose(4.9)
+    check("still open just before the timeout", AM.drawer:IsShown(), true)
+    AM.UpdateDrawerAutoClose(0.2)
+    check("closed once it elapses", AM.drawer:IsShown(), false)
+end
+
+-- ---------------------------------------------------------------------------
+print("hovering it keeps it open, and leaving and returning restarts the clock")
+do
+    boot(nil, { "AlphaButton", "BetaButton" })
+    AM.minimapButton = nil
+    AM.ResetDrawerIdle()
+
+    Stub.cursor.x, Stub.cursor.y = AM.drawer:GetLeft() + 5, AM.drawer:GetTop() - 5
+    for i = 1, 20 do AM.UpdateDrawerAutoClose(1) end
+    check("never closes while hovered", AM.drawer:IsShown(), true)
+
+    -- Away for a while, but back before the deadline.
+    Stub.cursor.x, Stub.cursor.y = 50, 50
+    AM.UpdateDrawerAutoClose(4)
+    Stub.cursor.x, Stub.cursor.y = AM.drawer:GetLeft() + 5, AM.drawer:GetTop() - 5
+    AM.UpdateDrawerAutoClose(0.1)
+    Stub.cursor.x, Stub.cursor.y = 50, 50
+    AM.UpdateDrawerAutoClose(4)
+    check("the clock restarted on re-entry", AM.drawer:IsShown(), true)
+    AM.UpdateDrawerAutoClose(1.1)
+    check("and then closes", AM.drawer:IsShown(), false)
+end
+
+-- ---------------------------------------------------------------------------
+print("it does not close out from under a drag")
+do
+    local buttons = boot(nil, { "AlphaButton", "BetaButton" })
+    AM.minimapButton = nil
+    AM.ResetDrawerIdle()
+
+    -- Dragging an icon out necessarily takes the cursor off the drawer; closing
+    -- mid-gesture would cancel the thing being done.
+    Stub.cursor.x, Stub.cursor.y = AM.drawer:GetLeft() + 5, AM.drawer:GetTop() - 5
+    Stub.FireScript(buttons["BetaButton"], "OnDragStart")
+    Stub.cursor.x, Stub.cursor.y = 50, 50
+    for i = 1, 20 do AM.UpdateDrawerAutoClose(1) end
+    check("stays open for the whole drag", AM.drawer:IsShown(), true)
+
+    Stub.FireScript(buttons["BetaButton"], "OnDragStop")
+    check("  and the drop still released the icon", collectedNames(), "AlphaButton")
+end
+
+-- ---------------------------------------------------------------------------
+print("auto-close can be turned off")
+do
+    boot(nil, { "AlphaButton" })
+    AM.minimapButton = nil
+    AM_DrawerAutoClose = 0
+    AM.ResetDrawerIdle()
+
+    Stub.cursor.x, Stub.cursor.y = 50, 50
+    for i = 1, 60 do AM.UpdateDrawerAutoClose(1) end
+    check("stays open indefinitely", AM.drawer:IsShown(), true)
+
+    AM_DrawerAutoClose = 2
+    AM.UpdateDrawerAutoClose(2.1)
+    check("and a custom timeout is honoured", AM.drawer:IsShown(), false)
+    AM_DrawerAutoClose = nil
+end
+
+-- ---------------------------------------------------------------------------
 print("")
 if failures == 0 then
     print("all " .. checks .. " checks passed")
